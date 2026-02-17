@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Bus Booking System (SPA)</title>
+    <!-- Links to styles.css: Contains all styling rules for classes like .panel, .view, .hidden, .requires-admin, etc. -->
+    <link rel="stylesheet" href="styles.css" />
+    <!-- Google Fonts for modern typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <header>
+      <div class="header-content">
+        <div class="header-left">
+          <h1> Bus Booking System</h1>
+          <!-- <p class="subtitle">Modern booking platform with advanced data structures</p> -->
+        </div>
+        <div class="header-right">
+          <!-- Server badge: Controlled by app.js probeServer() - shows when Java backend is detected -->
+          <div id="server-badge" class="server-badge hidden">
+            <span class="badge-icon">🟢</span>
+            <span>Server Connected</span>
+          </div>
+          <!-- Role toggle: app.js initRoleControls() handles switching between User/Admin roles -->
+          <!-- CSS rule: body.role-user [data-requires-admin] hides admin-only elements -->
+          <div class="role-toggle" aria-live="polite">
+            <span id="role-label" class="role-badge">
+              <span class="role-icon">👤</span>
+              <span class="role-text">User</span>
+            </span>
+            <!-- Button handler in app.js: Checks ADMIN_PASSCODE before switching to admin -->
+            <button id="btn-switch-role" type="button" class="btn-role-toggle">
+              <span class="btn-text">Switch to Admin</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation: app.js adds click listeners to all nav buttons using data-view attribute -->
+    <!-- showView() function switches between sections by toggling .hidden class -->
+    <nav class="main-nav">
+      <button data-view="buses" class="nav-btn active">
+        <span class="nav-icon"></span>
+        <span>Buses</span>
+      </button>
+      <!-- data-requires-admin="true": CSS hides this button when role is 'user' -->
+      <button data-view="routes" data-requires-admin="true" class="nav-btn">
+        <span class="nav-icon"></span>
+        <span>Routes</span>
+      </button>
+      <button data-view="book" class="nav-btn">
+        <span class="nav-icon"></span>
+        <span>Book Ticket</span>
+      </button>
+      <button data-view="waitlist" class="nav-btn">
+        <span class="nav-icon"></span>
+        <span>Waitlist</span>
+      </button>
+      <button data-view="reports" class="nav-btn">
+        <span class="nav-icon"></span>
+        <span>Reports</span>
+      </button>
+    </nav>
+
+    <main>
+      <!-- BUSES VIEW: Default view, uses LinkedList (busMgr.list) to store buses, Map (busMgr.map) for O(1) lookup -->
+      <section id="view-buses" class="view">
+        <h2>Buses</h2>
+        <!-- Source and Destination Filter: Filter buses by source and destination -->
+        <div class="panel route-search-panel">
+          <input id="bus-source" class="route-input" placeholder="Source (e.g. CityA)" />
+          <input id="bus-destination" class="route-input" placeholder="Destination (e.g. CityB)" />
+          <button id="btn-search-route" class="btn-search-route">Search Buses</button>
+        </div>
+        <!-- Search & Filter: app.js renderBusesInteractive() filters using Array.filter() -->
+        <div class="panel small">
+          <!-- Input handler: 'input' event triggers real-time search filtering -->
+          <input id="bus-search" placeholder="Search by number or route" />
+          <!-- Populated by populateRouteFilter() - shows unique routes from routeMgr -->
+          <select id="bus-filter-route" title="Filter buses by route"><option value="">--Filter by route--</option></select>
+          <!-- Refreshes bus list and route filter dropdown -->
+          <button id="btn-refresh">Refresh</button>
+        </div>
+        <!-- Admin-only form: ensureAdmin() checks role before allowing submission -->
+        <div class="panel requires-admin" data-requires-admin="true">
+          <!-- Form handler in app.js: Creates Bus object, adds to busMgr (uses LinkedList.add, Map.set, BST.insert) -->
+          <form id="form-add-bus">
+            <input placeholder="Bus Number" id="bus-number" required />
+            <input placeholder="Route Name" id="bus-route" required />
+            <!-- Departure time stored as number, used for BST (Binary Search Tree) sorting -->
+            <input placeholder="Departure (e.g. 900)" id="bus-depart" required />
+            <input placeholder="Seats (enforced)" id="bus-seats" value="40" required readonly />
+            <!-- Seats and columns are enforced globally for consistent layout -->
+            <input placeholder="Columns (enforced)" id="bus-cols" value="4" readonly />
+            <small class="field-hint">Note: System enforces 40 seats and 4 columns (2 + aisle + 2).</small>
+            <span id="bus-cols-error" class="input-error" aria-live="polite"></span>
+            <input placeholder="Price" id="bus-price" required />
+            <button type="submit">Add Bus</button>
+          </form>
+        </div>
+        <!-- Bus list container: Dynamically populated by renderBusesInteractive() -->
+        <!-- Clicking a bus item calls showBusDetail() to display seat map -->
+        <div class="panel hidden" id="buses-panel">
+          <div class="panel-header">
+            <h3>Available Buses</h3>
+            <span id="bus-count" class="count-badge">0 buses</span>
+          </div>
+          <div id="buses-list" class="buses-grid"></div>
+          <div id="buses-loading" class="loading-state hidden">
+            <div class="spinner"></div>
+            <p>Loading buses...</p>
+          </div>
+        </div>
+        <!-- Bus detail panel: Shows seat map with visual grid -->
+        <!-- Seat selection: Clicking available seat calls selectSeat() which sets selectedSeat global variable -->
+        <div class="panel" id="bus-detail" aria-hidden="true" class="hidden">
+          <h3>Bus Details</h3>
+          <div id="bus-detail-content"></div>
+          <!-- Seat grid: Dynamically generated by showBusDetail() based on bus.totalSeats -->
+          <!-- Each seat is clickable if available (bus.seats[index] === false) -->
+          <div id="seat-map" class="seat-grid"></div>
+          <div id="seat-legend" class="seat-legend">
+            <div><span class="seat legend free"></span> Available</div>
+            <div><span class="seat legend booked"></span> Booked</div>
+            <div><span class="seat legend selected"></span> Selected</div>
+          </div>
+          <div id="seat-caption" class="seat-caption" aria-hidden="true"></div>
+          <button id="btn-close-detail">Close</button>
+        </div>
+      </section>
+
+      <!-- ROUTES VIEW: Demonstrates Graph DSA - uses Graph class with BFS (Breadth-First Search) for path finding -->
+      <section id="view-routes" class="view hidden requires-admin" data-requires-admin="true">
+        <h2>Routes</h2>
+        <!-- Path finder: Uses Graph.bfsPath() algorithm to find shortest path between cities -->
+        <div class="panel">
+          <label for="graph-src">Source:</label>
+          <input id="graph-src" placeholder="City name" />
+          <label for="graph-dst">Destination:</label>
+          <input id="graph-dst" placeholder="City name" />
+          <!-- Button handler: buildGraphFromRoutes() creates graph, then bfsPath() finds route -->
+          <button id="btn-find-path">Find Path</button>
+        </div>
+        <!-- Add route form: Stores routes in routeMgr (LinkedList) -->
+        <div class="panel requires-admin" data-requires-admin="true">
+          <form id="form-add-route">
+            <input placeholder="Route Name (e.g. CityA-CityB)" id="route-name" required />
+            <!-- Stops parsed as array, used to build graph edges (addEdge between consecutive stops) -->
+            <input placeholder="Stops (comma separated)" id="route-stops" />
+            <button type="submit">Add Route</button>
+          </form>
+        </div>
+        <!-- Routes list: Populated by renderRoutes() from routeMgr.all() -->
+        <div class="panel">
+          <h3>All Routes</h3>
+          <div id="routes-list"></div>
+        </div>
+        <!-- Graph visualization: Canvas drawn by drawRouteGraph() -->
+        <!-- Shows nodes (cities) as circles, edges as lines, highlights path in red if found -->
+        <div class="panel">
+          <h3>Route Graph</h3>
+          <canvas id="route-graph" width="700" height="350"></canvas>
+          <!-- Path output: Displays BFS path result as "CityA -> CityB -> CityC" -->
+          <div id="path-output" class="mono"></div>
+        </div>
+      </section>
+
+      <section id="view-book" class="view hidden">
+        <h2>Book Ticket</h2>
+        <div class="panel">
+          <form id="form-book">
+            <div class="form-section">
+              <h3 class="form-section-title">Route Details</h3>
+              <input placeholder="Source (e.g. CityA)" id="book-source" class="route-input" required />
+              <input placeholder="Destination (e.g. CityB)" id="book-destination" class="route-input" required />
+              <input type="date" id="book-date" class="route-input" title="Select travel date" required />
+            </div>
+            <div class="form-section">
+              <h3 class="form-section-title">Passenger Details</h3>
+              <input placeholder="Passenger Name" id="pass-name" required />
+              <input placeholder="Phone" id="pass-phone" />
+            </div>
+            <div class="form-section">
+              <h3 class="form-section-title">Bus Selection</h3>
+              <input placeholder="Bus Number (or click a bus)" id="book-bus" required />
+              <label>Or select seat from bus detail to auto-fill bus number.</label>
+            </div>
+            <div class="form-section">
+              <h3 class="form-section-title">Payment Details</h3>
+              <label for="payment-method">Payment Method:</label>
+              <select id="payment-method" title="Select payment method">
+                <option value="qr">Scan QR</option>
+                <option value="netbanking">NetBanking</option>
+                <option value="cod">Cash</option>
+              </select>
+
+              <!-- QR Payment Fields -->
+              <div id="qr-fields" class="payment-fields hidden">
+                <p>Scan the QR below using your phone to pay the fare amount.</p>
+                <img id="payment-qr" src="payment-qr.png" alt="Scan to pay QR" />
+                <small class="field-hint">After completing payment, return here and confirm to complete booking. Your QR image should be saved as <code>web/payment-qr.png</code>.</small>
+                <div id="qr-msg" class="field-hint hidden" aria-live="polite"></div>
+              </div>
+              
+              <!-- NetBanking Fields -->
+              <div id="netbanking-fields" class="payment-fields hidden">
+                <select id="bank-select" title="Select your bank">
+                  <option value="">Select Bank</option>
+                  <option value="sbi">State Bank of India</option>
+                  <option value="hdfc">HDFC Bank</option>
+                  <option value="icici">ICICI Bank</option>
+                  <option value="axis">Axis Bank</option>
+                  <option value="pnb">Punjab National Bank</option>
+                  <option value="bob">Bank of Baroda</option>
+                </select>
+                <input type="text" id="netbanking-userid" placeholder="User ID" />
+                <input type="password" id="netbanking-password" placeholder="Password" />
+              </div>
+              
+              <button type="submit" class="btn-pay-book">Pay &amp; Book</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>My Bookings</h3>
+            <button id="btn-print-ticket" class="btn-icon" title="Print Ticket">
+              🖨️ Print
+            </button>
+          </div>
+          <div class="table-wrapper">
+            <table id="bookings-table" aria-describedby="bookings-caption">
+              <caption id="bookings-caption" class="sr-only">Current ticket bookings</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Ticket ID</th>
+                  <th scope="col">Bus</th>
+                  <th scope="col">Route</th>
+                  <th scope="col">Date</th>
+                  <th scope="col">Passenger</th>
+                  <th scope="col">Seat</th>
+                  <th scope="col">Time</th>
+                  <th scope="col">Payment</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="bookings-empty" class="empty-state">
+              <div class="empty-icon">🎫</div>
+              <p>No bookings yet. Book your first ticket!</p>
+            </div>
+          </div>
+        </div>
+        <div class="panel requires-admin" data-requires-admin="true">
+          <h3>Cancel / Undo</h3>
+          <input placeholder="Ticket ID to cancel" id="cancel-ticket" />
+          <button id="btn-cancel">Cancel</button>
+          <button id="btn-undo">Undo Last</button>
+        </div>
+      </section>
+
+      <section id="view-waitlist" class="view hidden">
+        <h2>Waitlist Queue</h2>
+        <div class="panel">
+          <div class="panel-header">
+            <h3>Passengers in Queue</h3>
+            <span id="waitlist-count" class="count-badge">0 waiting</span>
+          </div>
+          <div id="waitlist-list" class="waitlist-container"></div>
+          <div id="waitlist-empty" class="empty-state hidden">
+            <div class="empty-icon">✅</div>
+            <p>No passengers in waitlist. All seats available!</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-reports" class="view hidden">
+        <h2>Reports &amp; Analytics</h2>
+
+        <div class="panel report-controls">
+          <div class="controls-left">
+            <label for="report-sort" class="sr-only">Sort buses</label>
+            <select id="report-sort">
+              <option value="departure">Sort by Departure</option>
+              <option value="availability">Sort by Availability</option>
+              <option value="price">Sort by Price</option>
+            </select>
+            <button id="btn-refresh-reports" type="button">Refresh</button>
+          </div>
+          <div class="controls-right">
+            <button id="btn-export-csv" type="button">Export CSV</button>
+            <button id="btn-export-pdf" type="button">Print / Save as PDF</button>
+          </div>
+        </div>
+
+        <div class="panel stats-panel">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span>Total Buses</span>
+              <strong id="stat-total-buses">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Total Bookings</span>
+              <strong id="stat-total-bookings">0</strong>
+            </div>
+            <div class="stat-card">
+              <span>Occupancy</span>
+              <strong id="stat-occupancy">0%</strong>
+            </div>
+            <div class="stat-card">
+              <span>Avg. Ticket Price</span>
+              <strong id="stat-avg-price">$0.00</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Bus Overview</h3>
+          <div class="table-wrapper">
+            <table id="reports-table" aria-describedby="reports-caption">
+              <caption id="reports-caption" class="sr-only">Summary of buses and availability</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Bus</th>
+                  <th scope="col">Route</th>
+                  <th scope="col">Departure</th>
+                  <th scope="col">Price</th>
+                  <th scope="col">Seats (Avail / Total)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div id="reports-empty" class="empty-state">(no buses)</div>
+          </div>
+        </div>
+
+        <div class="panel charts-panel">
+          <h3>Charts</h3>
+          <canvas id="chart-top-buses" width="600" height="200" class="chart-canvas"></canvas>
+          <canvas id="chart-top-routes" width="600" height="200" class="chart-canvas"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast notification container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Modal for nicer confirmations and dialogs -->
+    <div id="modal" class="hidden" role="dialog" aria-modal="true">
+      <div id="modal-overlay" class="modal-overlay"></div>
+      <div id="modal-content" class="modal-content">
+        <div id="modal-header">
+          <h3 id="modal-title">Confirm</h3>
+          <button id="modal-close" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div id="modal-body"></div>
+        <div id="modal-actions">
+          <button id="modal-cancel" class="btn-secondary">Cancel</button>
+          <button id="modal-ok" class="btn-primary">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <!-- <small>Open `web/index.html` in your browser to run.</small> -->
+    </footer>
+
+    <!-- Chart.js from CDN for nicer charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
