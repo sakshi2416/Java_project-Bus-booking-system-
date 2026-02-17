@@ -1,6 +1,6 @@
 Bus Booking System (Console Java)
 
-This is a simple, beginner-friendly Java console application that demonstrates core DSA concepts while implementing a Bus Booking System.
+This is a simple, GUI based Java console application that demonstrates core DSA concepts while implementing a Bus Booking System.
 
 Features implemented:
 
@@ -57,3 +57,4 @@ java -cp out busbooking.Main
 ```
 
 Notes
+
